@@ -27,12 +27,11 @@ impl Hypergraph {
     }
 }
 
-fn main() {
+fn read_hypergraph<R: BufRead>(reader: R) -> Hypergraph {
     let mut hypergraph = Hypergraph::new();
     let mut line_num = 0;
-    let stdin = io::stdin();
 
-    for line in stdin.lock().lines() {
+    for line in reader.lines() {
         let line = line.unwrap();
         if line == "-" {
             break;
@@ -46,5 +45,14 @@ fn main() {
         line_num += 1;
     }
 
-    println!("{:#?}", hypergraph);
+    hypergraph
+}
+
+fn main() {
+    let stdin = io::stdin();
+    let hg1 = read_hypergraph(stdin.lock());
+    let hg2 = read_hypergraph(stdin.lock());
+
+    println!("Hypergraph 1: {:#?}", hg1);
+    println!("Hypergraph 2: {:#?}", hg2);
 }
