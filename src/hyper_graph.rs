@@ -1,7 +1,9 @@
+use fmt::Display;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::io::{BufRead};
+use std::fmt;
 
 
 
@@ -68,5 +70,47 @@ impl Hypergraph<String, usize> {
         }
 
         hypergraph
+    }
+}
+
+impl <V, E> Hypergraph<V, E> where
+    V: Eq + Hash + Clone,
+    E: Eq + Hash + Clone
+{
+    pub(crate) fn adjacency_matrix(&self) -> Vec<Vec<bool>> {
+        let nodes = self.nodes.keys().cloned().collect::<Vec<V>>();
+        let edges = self.edges.keys().cloned().collect::<Vec<E>>();
+        let mut matrix = vec![vec![false; edges.len()]; nodes.len()];
+
+        for (node_index, node) in nodes.iter().enumerate() {
+            if let Some(edges_set) = self.nodes.get(node) {
+                for edge in edges_set {
+                    if let Some(edge_index) = edges.iter().position(|e| e == edge) {
+                        matrix[node_index][edge_index] = true;
+                    }
+                }
+            }
+        }
+
+        matrix
+    }
+}
+
+impl<V, E> Display for Hypergraph<V, E>
+    where
+        V: Eq + Hash + Display + Clone,
+        E: Eq + Hash + Display + Clone,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let matrix = self.adjacency_matrix();
+
+        for matrix_line in matrix {
+            for boolean_value in matrix_line {
+                write!(f, " {}", if boolean_value { "1" } else { "0" })?;
+            }
+            writeln!(f)?;
+        }
+
+        Ok(())
     }
 }

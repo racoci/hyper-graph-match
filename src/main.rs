@@ -14,6 +14,6 @@ fn main() {
     println!("Please input the second hypergraph, using the same format as the first hypergraph.");
     let hg2 = Hypergraph::<String, usize>::from_reader(stdin.lock());
 
-    println!("Hypergraph 1: {:#?}", hg1);
+    println!("Hypergraph 1: {}", hg1);
     println!("Hypergraph 2: {:#?}", hg2);
 }
