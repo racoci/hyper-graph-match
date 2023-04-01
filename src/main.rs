@@ -1,6 +1,7 @@
 mod hyper_graph;
 
-use std::io::{self, BufRead};
+use std::io::{self};
+use hyper_graph::Hypergraph;
 
 fn main() {
     println!("\n\nPlease input the first hypergraph, one hyperedge per line,\n\
@@ -8,10 +9,10 @@ fn main() {
      Indicate the end of the hypergraph by typing a single dash (-) on\n\
       a line by itself.\n\n");
     let stdin = io::stdin();
-    let hg1 = hyper_graph::Hypergraph::from_reader(stdin.lock());
+    let hg1 = Hypergraph::<String, usize>::from_reader(stdin.lock());
 
     println!("Please input the second hypergraph, using the same format as the first hypergraph.");
-    let hg2 = hyper_graph::Hypergraph::from_reader(stdin.lock());
+    let hg2 = Hypergraph::<String, usize>::from_reader(stdin.lock());
 
     println!("Hypergraph 1: {:#?}", hg1);
     println!("Hypergraph 2: {:#?}", hg2);
