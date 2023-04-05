@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::io::{BufRead};
 use std::fmt;
-
+use rand::prelude::*;
 
 
 #[derive(Debug)]
@@ -71,6 +71,48 @@ impl Hypergraph<String, usize> {
 
         hypergraph
     }
+
+    pub(crate) fn random(num_nodes: usize, num_edges: usize) -> Self {
+        let mut hypergraph = Self::new();
+        let mut rng = thread_rng();
+
+        for edge_num in 0..num_edges {
+            let num_nodes_in_edge = rng.gen_range(1..num_nodes);
+            let mut nodes_in_edge = HashSet::new();
+
+            for _ in 0..num_nodes_in_edge {
+                let node_index = rng.gen_range(0.. num_nodes);
+                let node_name = generate_node_name(node_index);
+                nodes_in_edge.insert(node_name.to_string());
+            }
+
+            for node in &nodes_in_edge {
+                hypergraph.add_node(node.clone(), edge_num);
+            }
+
+            hypergraph.add_edge(edge_num, nodes_in_edge);
+        }
+
+        hypergraph
+    }
+}
+
+fn generate_node_name(index: usize) -> String {
+    let mut result = String::new();
+    let mut index = index;
+
+    loop {
+        let remainder = index % 26;
+        let digit = ('a' as u8 + remainder as u8) as char;
+        result.push(digit);
+        index /= 26;
+        if index == 0 {
+            break;
+        }
+        index -= 1;
+    }
+
+    result.chars().rev().collect()
 }
 
 impl <V, E> Hypergraph<V, E> where
@@ -105,10 +147,10 @@ impl<V, E> Display for Hypergraph<V, E>
         let matrix = self.adjacency_matrix();
 
         for matrix_line in matrix {
-            for boolean_value in matrix_line {
-                write!(f, " {}", if boolean_value { "1" } else { "0" })?;
-            }
             writeln!(f)?;
+            for boolean_value in matrix_line {
+                write!(f, "{}", if boolean_value { "@" } else { " " })?;
+            }
         }
 
         Ok(())
