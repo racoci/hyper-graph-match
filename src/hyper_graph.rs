@@ -1,5 +1,6 @@
 use fmt::Display;
 use std::borrow::Borrow;
+use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::io::{BufRead};
@@ -7,13 +8,81 @@ use std::fmt;
 use rand::prelude::*;
 
 
-#[derive(Debug)]
-pub(crate) struct Hypergraph<V,E> {
-    nodes: HashMap<V, HashSet<E>>,
-    edges: HashMap<E, HashSet<V>>,
+#[derive(Debug, Clone)]
+pub(crate) struct Hypergraph<V: Eq + Hash, E: Eq + Hash> {
+    pub(crate) nodes: HashMap<V, HashSet<E>>,
+    pub(crate) edges: HashMap<E, HashSet<V>>,
 }
 
-impl<V, E> Hypergraph<V, E> {
+impl<V: PartialEq, E: PartialEq> PartialEq for Hypergraph<V, E> where
+    V: Eq + Hash,
+    E: Eq + Hash
+{
+    fn eq(&self, other: &Self) -> bool {
+        true
+    }
+}
+
+trait Permutable<K,V> {
+    fn permute(&self, permutation: &[usize]) -> Self;
+}
+
+impl<K: Eq + Hash + Clone, V: Clone> Permutable<K, V> for HashMap<K, V> {
+    fn permute(&self, permutation: &[usize]) -> Self {
+        if self.is_empty() {
+            return HashMap::new()
+        }
+
+        if permutation.is_empty() {
+            return self.clone()
+        }
+
+        for index in permutation {
+            if *index > permutation.len() {
+                println!("Invalid permutation {:#?}", permutation);
+                return self.clone()
+            }
+        }
+
+        if permutation.len() < self.keys().len() {
+            println!("Permutation is smaller than set of keys");
+            return return HashMap::new()
+        }
+
+        if permutation.len() > self.keys().len() {
+            println!("Permutation {} is grater than set of keys {}",
+                     permutation.len(),
+                     self.keys().len()
+            );
+            return self.clone()
+        }
+
+        let mut new_map = HashMap::<K,V>::with_capacity(self.len());
+        let keys: Vec<K> = self.keys().cloned().collect();
+        for (index, key) in keys.iter().enumerate() {
+            let old_value_reference = self.get(key).unwrap();
+            let permuted_index = permutation.get(index).unwrap();
+            let permuted_key = keys.get(*permuted_index).unwrap().clone();
+            let old_value = old_value_reference.clone();
+            let x = new_map.insert(permuted_key, old_value);
+        }
+        new_map
+    }
+}
+
+impl<V: Eq + Hash + Clone, E: Eq + Hash + Clone> Hypergraph<V, E> {
+    pub(crate) fn permute(
+        &self,
+        node_permutation: &[usize],
+        edge_permutation: &[usize],
+    ) -> Self {
+        let nodes = self.nodes.permute(node_permutation);
+        let edges = self.edges.permute(edge_permutation);
+        Hypergraph { nodes, edges }
+    }
+}
+
+impl<V: Eq + Hash, E: Eq + Hash> Hypergraph<V, E> {
     pub(crate) fn new() -> Self {
         Self {
             nodes: HashMap::new(),
@@ -22,15 +91,15 @@ impl<V, E> Hypergraph<V, E> {
     }
 
     pub(crate) fn add_node(&mut self, node: V, edge: E) where
-        V: Hash, V: Eq, E: Hash, E: Eq
-
+        V: Hash + Eq,
+        E: Hash + Eq
     {
         self.nodes.entry(node).or_insert_with(HashSet::new).insert(edge);
     }
 
     pub(crate) fn add_edge(&mut self, edge: E, nodes: HashSet<V>) where
-        V: Hash, V: Eq, E: Hash, E: Eq
-
+        V: Hash + Eq,
+        E: Hash + Eq
     {
         let nodes_of_edge = self.edges
             .entry(edge)
@@ -77,7 +146,7 @@ impl Hypergraph<String, usize> {
         let mut rng = thread_rng();
 
         for edge_num in 0..num_edges {
-            let num_nodes_in_edge = rng.gen_range(1..num_nodes);
+            let num_nodes_in_edge = rng.gen_range(2..=max(2,num_nodes));
             let mut nodes_in_edge = HashSet::new();
 
             for _ in 0..num_nodes_in_edge {
