@@ -1,13 +1,10 @@
 import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.random.Random
 import kotlin.random.Random.Default.nextInt
-import kotlin.random.nextUInt
 
 class HashReference<T>(referent: T?) {
     companion object {
         private var idAcc = 0
-        private val knownHashes = mutableMapOf<Int, Int>()
     }
 
     private val reference = WeakReference(referent)
@@ -15,15 +12,15 @@ class HashReference<T>(referent: T?) {
     val value: T? get() = reference.get()
     val id = idAcc++
     override fun hashCode(): Int {
-        val hashResult = if (isHashing.compareAndSet(false, true)) {
-            reference.get()?.hashCode() ?: super.hashCode()
+        if (!isHashing.compareAndSet(false, true)) {
+            return super.hashCode()
         } else {
-            knownHashes[id] ?: super.hashCode().also {
-                knownHashes[id] = it
-            }
+            return reference.get()?.runCatching {
+                hashCode()
+            }?.onFailure {
+                println("Error ${it.message}")
+            }?.getOrNull() ?: super.hashCode()
         }
-        isHashing.set(false)
-        return hashResult
 
     }
 
@@ -36,19 +33,17 @@ class HashReference<T>(referent: T?) {
 }
 
 class MutableSafeSet<T>(vararg initialValues: T) : MutableSet<T?> {
-    private val refs: MutableSet<HashReference<T>> =
-        mutableSetOf(*initialValues.map { HashReference(it) }.toTypedArray())
-
+    private val refs: MutableSet<HashReference<T>> = mutableSetOf(
+        *initialValues.map { HashReference(it) }.toTypedArray()
+    )
     companion object {
         private val referenced = mutableSetOf<Int>()
     }
-
     constructor(iter: Iterable<T>) : this() {
         iter.forEach {
             refs.add(HashReference(it))
         }
     }
-
     override fun add(element: T?): Boolean = refs.add(HashReference(element))
     override fun addAll(elements: Collection<T?>): Boolean = refs.addAll(elements.map { HashReference(it) })
     override val size: Int get() = refs.size
@@ -61,7 +56,6 @@ class MutableSafeSet<T>(vararg initialValues: T) : MutableSet<T?> {
         override fun next(): T? = refsIterator.next().value
         override fun remove() = refsIterator.remove()
     }
-
     override fun contains(element: T?): Boolean = refs.contains(HashReference(element))
     override fun retainAll(elements: Collection<T?>): Boolean =
         refs.retainAll(elements.map { HashReference(it) }.toSet())
@@ -82,7 +76,6 @@ class MutableSafeSet<T>(vararg initialValues: T) : MutableSet<T?> {
         referenced.clear()
         return string
     }
-
     override fun hashCode(): Int {
         return if (!isEmpty()) {
             refs.sumOf { it.hashCode() }
@@ -99,7 +92,6 @@ class MutableSafeSet<T>(vararg initialValues: T) : MutableSet<T?> {
 fun <T> Sequence<T>.toSafeSet() = MutableSafeSet(asIterable())
 fun <T> mutableSafeSetOf(vararg initialValues: T) = MutableSafeSet(*initialValues)
 fun <T> safeSet(vararg elements: T): Set<T?> = mutableSafeSetOf(*elements)
-
 interface Hypergraph<V, E> {
     val nodes: Map<V, Set<E>>
     val edges: Map<E, Set<V>>
@@ -134,6 +126,83 @@ fun <V,E> Hypergraph<V, E>.permute(nodePermutation: List<Int>, edgePermutation: 
     return object : Hypergraph<V, E> {
         override val nodes: Map<V, Set<E>> = newNodes
         override val edges: Map<E, Set<V>> = newEdges
+    }
+}
+
+sealed interface NodeEdge<V, E> {
+    data class Node<V>(val node: V): NodeEdge<V, Nothing>
+    data class Edge<E>(val edge: E): NodeEdge<Nothing, E>
+}
+
+interface Neighborhood<T> {
+    val T.neighbors: Sequence<T>
+}
+
+fun <T> neighborhood(getNeighbors: (T) -> Sequence<T>)  = object: Neighborhood<T> {
+    override val T.neighbors: Sequence<T> get() = getNeighbors(this)
+
+}
+
+val <V, E> Hypergraph<V, E>.neighborhood get() = neighborhood<NodeEdge<*, *>> {
+    when (it) {
+        is NodeEdge.Node<*> -> nodes[it.node]?.asSequence()?.mapNotNull {
+            NodeEdge.Edge(it)
+        } ?: sequenceOf()
+
+        is NodeEdge.Edge<*> -> edges[it.edge]?.asSequence()?.mapNotNull {
+            NodeEdge.Node(it)
+        } ?: sequenceOf()
+    }
+
+    }
+
+data class Context<T, R>(
+    val current: T,
+    val state: R,
+    val visited: Set<T>,
+    val history: MutableList<Pair<T, R>>,
+    val neighbors: Sequence<T>,
+)
+
+fun <T, R> Neighborhood<T>.bfs(start: T, initialState: R, stateChange: R.(T) -> R): Sequence<Context<T, R>> {
+    val visited = mutableSetOf(start)
+    val history = mutableListOf(start to initialState)
+
+    return sequence {
+        while (history.isNotEmpty()) {
+            val (current, state) = history.removeFirst()
+            val neighbors = current.neighbors
+            val newNeighbors = neighbors.filterNot { it in visited }
+            val context = Context(current, state, visited, history, neighbors)
+            yield(context)
+            history.addAll(newNeighbors.map { it to state.stateChange(it) })
+            visited.addAll(newNeighbors)
+        }
+    }
+}
+
+fun <T> Neighborhood<T>.bfs(start: T) = bfs(start, listOf<T>()) {
+    this + it
+}
+
+fun <T, R> Neighborhood<T>.bfs(start: T, reduction: T.(Set<T>) -> R) = bfs(start).map {
+
+}
+
+fun <T, R> Neighborhood<T>.dfs(start: T, initialState: R, stateChange: R.(T) -> R): Sequence<Context<T, R>> {
+    val visited = mutableSetOf(start)
+    val history = mutableListOf(start to initialState)
+
+    return sequence {
+        while (history.isNotEmpty()) {
+            val (current, state) = history.removeLast()
+            val neighbors = current.neighbors
+            val newNeighbors = neighbors.filterNot {it in visited}
+            val context = Context(current, state, visited, history, neighbors)
+            yield(context)
+            history.addAll(newNeighbors.map { it to state.stateChange(it) })
+            visited.addAll(newNeighbors)
+        }
     }
 }
 
@@ -256,36 +325,6 @@ interface RangeList<T> {
     val last: T
 }
 
-//val CharRange.size get() = (last - first + 1).toUInt()
-//operator fun CharRange.plus(other: CharRange): RangeList<Char> {
-//    val self = this
-//    return object: RangeList<Char> {
-//        override val size: UInt get() = self.size + other.size
-//        override val first: Char get() = self.first
-//        override val last: Char get() = other.last
-//
-//        override fun get(index: UInt): Char = when {
-//            index < self.size -> self.first + index.toInt()
-//            index < size -> other.first + (index - self.size).toInt()
-//            else -> ' '
-//        }
-//    }
-//}
-//
-//operator fun RangeList<Char>.plus(other: CharRange): RangeList<Char> {
-//    val self = this
-//    return object: RangeList<Char> {
-//        override val size: UInt get() = self.size + other.size
-//        override val first: Char get() = self.first
-//        override val last: Char get() = other.last
-//        override fun get(index: UInt): Char = when {
-//            index < self.size -> self.first + index.toInt()
-//            index < size -> other.first + (index - self.size).toInt()
-//            else -> ' '
-//        }
-//    }
-//}
-
 val UInt.charString: String get() {
     val validCharset: List<Char> =  ('꯰'+1..'힣') + ('A'..'Z') + ('a'..'z')
     val base = validCharset.size.toUInt()
@@ -376,5 +415,5 @@ fun testCanonization(minNodes:Int, minEdges: Int, numGraphs: Int, numTests: Int,
 
 fun main(args: Array<String>) {
     println("Program arguments: ${args.joinToString()}")
-    testCanonization(10, 10, 100, 100000, 100)
+    testCanonization(10, 10, 100, 100000, 20)
 }
